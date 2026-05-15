@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#4ade80" />
+    <meta
+      name="description"
+      content="Ouroboros — a memecoin concept that routes a slice of every trade toward acquiring other memecoins and sending them to the burn. The snake never stops eating."
+    />
+    <meta property="og:title" content="Ouroboros" />
+    <meta
+      property="og:description"
+      content="What if a memecoin taxed itself to buy other memecoins and burn them?"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/logo.png" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <title>Ouroboros — the memecoin that eats memecoins</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <header class="top">
+      <div class="brand">
+        <img class="logo" src="/logo.png" width="56" height="56" alt="Ouroboros logo" />
+        <div>
+          <span class="wordmark">Ouroboros</span>
+          <span class="tag">Solana · memecoin ouroboros</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="#feed">Serpent feed</a>
+        <a href="#board">Pump board</a>
+        <a href="#mechanic">The bite</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Perpetual launchpad</p>
+          <h1>What if a memecoin ate other memecoins?</h1>
+          <p class="lede">
+            A special tax routes liquidity toward scooping up other launchpad coins and
+            <strong>burning</strong> them—so the snake grows by digesting the zoo. One tail. Many
+            meals.
+          </p>
+          <div class="cta-row">
+            <a class="btn primary" href="#board">Watch the board</a>
+            <a class="btn ghost" href="#mechanic">Read the mechanic</a>
+          </div>
+        </div>
+        <aside class="hero-panel" aria-label="Highlights">
+          <ul class="ticks">
+            <li>Tax slices skimmed on activity</li>
+            <li>Router hunts volatile launchpad names</li>
+            <li>Burn address gets the last laugh</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section id="feed" class="panel feed">
+        <div class="panel-head">
+          <h2>Serpent feed</h2>
+          <p class="panel-sub">
+            Same story for every visitor: lines advance on a shared two-second UTC beat (no random
+            rolls). Tickers come from the live board once it loads; until then you see warm-up
+            copy. Timestamps are UTC so everyone reads the same clock.
+          </p>
+        </div>
+        <div class="feed-body">
+          <div class="feed-glow" aria-hidden="true"></div>
+          <ul id="feed-lines" class="feed-lines"></ul>
+        </div>
+      </section>
+
+      <section id="board" class="panel">
+        <div class="panel-head">
+          <h2>Pump.fun trending</h2>
+          <p class="panel-sub board-meta" id="board-meta" aria-live="polite">
+            <span id="board-sub">Loading…</span>
+            <span class="sync-chip" id="board-sync"></span>
+          </p>
+        </div>
+        <div class="table-wrap">
+          <table class="coins" aria-describedby="board-meta">
+            <thead>
+              <tr>
+                <th class="thumb-col" scope="col"><span class="sr-only">Image</span></th>
+                <th scope="col">Name</th>
+                <th scope="col">Ticker</th>
+                <th scope="col">Mint</th>
+                <th scope="col" class="num">USD mcap</th>
+                <th scope="col" class="num">SOL mcap</th>
+                <th scope="col" class="num">ATH USD</th>
+                <th scope="col">State</th>
+                <th scope="col">Last trade</th>
+                <th scope="col">Open</th>
+              </tr>
+            </thead>
+            <tbody id="coin-rows">
+              <tr>
+                <td colspan="10" class="loading">Summoning the board…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="mechanic" class="panel narrow">
+        <div class="panel-head">
+          <h2>The bite (how it reads)</h2>
+        </div>
+        <ol class="steps">
+          <li>Trades generate a dedicated tax slice instead of only enriching insiders.</li>
+          <li>
+            That slice is programmatically aimed at other memecoins—especially the chaotic
+            long-tail on bonding curves.
+          </li>
+          <li>
+            Acquired inventory is routed to burn, shrinking external supply while the story gets
+            louder.
+          </li>
+        </ol>
+        <p class="fineprint">
+          Numbers in the table are third-party market snapshots, not trading advice. Memecoins are
+          wildly risky; never deploy more capital than you can afford to lose entirely.
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>
+        Data: Pump.fun (trending via proxy in dev) and DexScreener fallbacks. For deeper analytics
+        see
+        <a href="https://docs.bitquery.io/docs/blockchain/Solana/Pumpfun/Pump-Fun-API/">Bitquery Pump.fun API</a>,
+        <a href="https://rapidapi.com/yllvaranwar/api/pumpfun-api">PumpFun API on RapidAPI</a>, or the
+        <a href="https://github.com/Nick-Gabe/pumpfun-api">pumpfun-api SDK</a>.
+      </p>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
