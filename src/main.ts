@@ -52,6 +52,7 @@ type FeedCoin = { symbol: string; mint: string; name: string };
 const PUMP_PROXY = "/pump-api";
 const BOOST_LATEST = "https://api.dexscreener.com/token-boosts/latest/v1";
 const BOOST_TOP = "https://api.dexscreener.com/token-boosts/top/v1";
+const TOKEN_PROFILES_LATEST = "https://api.dexscreener.com/token-profiles/latest/v1";
 const DEX_TOKENS = "https://api.dexscreener.com/latest/dex/tokens";
 /** How often the trending table re-fetches (ms). */
 const TRENDING_POLL_MS = 1000;
@@ -70,6 +71,78 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(`${res.status} ${res.statusText}`);
   }
   return (await res.json()) as T;
+}
+
+/** DexScreener "spotlight" endpoints return either a raw array or `{ value: [...] }`. */
+function parseTokenSpotlightList(raw: unknown): BoostToken[] {
+  if (Array.isArray(raw)) {
+    return raw as BoostToken[];
+  }
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "value" in raw &&
+    Array.isArray((raw as BoostResponse).value)
+  ) {
+    return (raw as BoostResponse).value!;
+  }
+  return [];
+}
+
+async function fetchSpotlight(url: string): Promise<BoostToken[]> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`${res.status} ${res.statusText}`);
+  }
+  return parseTokenSpotlightList(await res.json());
+}
+
+function mergeBoostEntries(...lists: BoostToken[][]): string[] {
+  const merged: string[] = [];
+  const push = (entry?: BoostToken) => {
+    if (!entry) return;
+    if (entry.chainId?.toLowerCase() !== "solana") return;
+    const addr = entry.tokenAddress?.trim();
+    if (!addr) return;
+    merged.push(addr);
+  };
+  for (const list of lists) {
+    for (const item of list) push(item);
+  }
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const addr of merged) {
+    const key = addr.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(addr);
+  }
+  return deduped;
+}
+
+async function discoverMintsViaSearch(queries: string[], maxTotal: number): Promise<string[]> {
+  const collected: string[] = [];
+  const seen = new Set<string>();
+  for (const q of queries) {
+    try {
+      const data = await fetchJson<{ pairs?: DexPair[] }>(
+        `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(q)}`,
+      );
+      for (const p of data.pairs ?? []) {
+        if (p.chainId?.toLowerCase() !== "solana") continue;
+        const addr = p.baseToken?.address?.trim();
+        if (!addr) continue;
+        const k = addr.toLowerCase();
+        if (seen.has(k)) continue;
+        seen.add(k);
+        collected.push(addr);
+        if (collected.length >= maxTotal) return collected;
+      }
+    } catch {
+      /* one query failing should not block others */
+    }
+  }
+  return collected;
 }
 
 function mapPumpCoins(coins: PumpCoin[]): TableRow[] {
@@ -107,38 +180,33 @@ function formatAgo(ts?: number): string {
 }
 
 async function loadPumpTrending(limit = 56): Promise<PumpCoin[]> {
-  const url = `${PUMP_PROXY}/coins?limit=${limit}&offset=0&sort=trending`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Pump.fun ${res.status}`);
-  }
-  const data: unknown = await res.json();
-  if (!Array.isArray(data)) {
-    throw new Error("Pump.fun returned unexpected JSON");
-  }
-  return data as PumpCoin[];
-}
+  const path = `/coins?limit=${limit}&offset=0&sort=trending`;
+  const bases = [
+    (import.meta.env.VITE_PUMP_API_BASE || "").trim().replace(/\/$/, ""),
+    PUMP_PROXY,
+  ].filter((b, i, a) => b && a.indexOf(b) === i);
 
-function mergeBoosts(latest: BoostResponse, top: BoostResponse): string[] {
-  const merged: string[] = [];
-  const push = (entry?: BoostToken) => {
-    if (!entry) return;
-    if (entry.chainId?.toLowerCase() !== "solana") return;
-    const addr = entry.tokenAddress?.trim();
-    if (!addr) return;
-    merged.push(addr);
-  };
-  for (const item of latest.value ?? []) push(item);
-  for (const item of top.value ?? []) push(item);
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-  for (const addr of merged) {
-    const key = addr.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(addr);
+  let lastError: Error | null = null;
+  for (const base of bases) {
+    const url = `${base}${path}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Pump ${res.status}`);
+      }
+      const data: unknown = await res.json();
+      if (!Array.isArray(data)) {
+        throw new Error("Pump returned unexpected JSON");
+      }
+      if (!(data as PumpCoin[]).length) {
+        throw new Error("Pump returned empty list");
+      }
+      return data as PumpCoin[];
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+    }
   }
-  return deduped;
+  throw lastError ?? new Error("Pump unreachable");
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -167,13 +235,29 @@ function bestPairForMint(pairs: DexPair[], mint: string): DexPair | null {
 }
 
 async function loadDexFallbackRows(): Promise<TableRow[]> {
-  const [latest, top] = await Promise.all([
-    fetchJson<BoostResponse>(BOOST_LATEST),
-    fetchJson<BoostResponse>(BOOST_TOP),
+  const [latestR, topR, profilesR] = await Promise.allSettled([
+    fetchSpotlight(BOOST_LATEST),
+    fetchSpotlight(BOOST_TOP),
+    fetchSpotlight(TOKEN_PROFILES_LATEST),
   ]);
-  const mints = mergeBoosts(latest, top).slice(0, 48);
+  const latestArr = latestR.status === "fulfilled" ? latestR.value : [];
+  const topArr = topR.status === "fulfilled" ? topR.value : [];
+  const profilesArr = profilesR.status === "fulfilled" ? profilesR.value : [];
+
+  let mints = mergeBoostEntries(latestArr, topArr, profilesArr);
+
+  if (mints.length < 12) {
+    const extra = await discoverMintsViaSearch(["pump", "pump.fun", "solana meme"], 40);
+    const asTokens: BoostToken[] = extra.map((tokenAddress) => ({
+      chainId: "solana",
+      tokenAddress,
+    }));
+    mints = mergeBoostEntries(latestArr, topArr, profilesArr, asTokens);
+  }
+
+  mints = mints.slice(0, 56);
   const rows: TableRow[] = [];
-  for (const group of chunk(mints, 24)) {
+  for (const group of chunk(mints, 15)) {
     const path = `${DEX_TOKENS}/${group.map(encodeURIComponent).join(",")}`;
     const data = await fetchJson<DexTokensResponse>(path);
     const pairs = data.pairs ?? [];
@@ -411,7 +495,7 @@ function startTrendingData(
           announced = true;
           setBoardSubtitle(
             sub,
-            "Pump.fun trending (sort=trending). Updates about every second. On your own domain: run npm run build then npm start (serves dist/ and proxies /pump-api), or configure nginx to forward /pump-api to frontend-api-v3.pump.fun with Origin https://pump.fun.",
+            "Pump.fun trending (sort=trending). Updates about every second. Static hosts: set env VITE_PUMP_API_BASE at build time to your HTTPS reverse proxy (see worker/cf-pump-proxy.js), or run npm run build && npm start so /pump-api is served locally.",
           );
         }
         stamp();
@@ -423,7 +507,7 @@ function startTrendingData(
           announced = true;
           setBoardSubtitle(
             sub,
-            "Pump.fun was not reachable from the browser (CORS or missing /pump-api). Showing DexScreener boosts instead. For Pump data on your domain use npm start after build, or add a reverse proxy for /pump-api.",
+            "Showing DexScreener-backed Solana tokens (boosts, profiles, search). Live Pump.fun columns require a browser-accessible Pump mirror: build with VITE_PUMP_API_BASE, use npm start, or nginx /pump-api.",
           );
         }
         stamp();
@@ -432,7 +516,7 @@ function startTrendingData(
       }
       failStreak += 1;
       if (!announced && failStreak >= 4) {
-        tbody.innerHTML = `<tr><td colspan="10" class="error">Could not load Pump.fun or DexScreener after several tries. On your domain run <strong>npm run build</strong> then <strong>npm start</strong> so <code>/pump-api</code> is proxied to Pump.fun.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="error">Still no data. Check that this site can reach DexScreener (not blocked by an ad blocker or CSP). For full Pump.fun trending on a static host, build with <strong>VITE_PUMP_API_BASE</strong> pointing at a small HTTPS proxy (see <code>worker/cf-pump-proxy.js</code>), or serve with <strong>npm start</strong>.</td></tr>`;
         setSyncLabel(sync, "");
       }
     } finally {
