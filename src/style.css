@@ -263,7 +263,12 @@ h1 {
   border-radius: 18px;
   border: 1px solid rgba(19, 78, 74, 0.15);
   background: #031915;
-  min-height: 220px;
+  /* Fixed footprint: same height empty, loading, or full of lines */
+  height: 320px;
+  min-height: 320px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -277,12 +282,17 @@ h1 {
 
 .feed-lines {
   position: relative;
+  z-index: 1;
   list-style: none;
   margin: 0;
   padding: 1rem 1.25rem 1.25rem;
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 0.9rem;
   color: #d1fae5;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .feed-lines li {

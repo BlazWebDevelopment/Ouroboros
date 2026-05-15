@@ -384,11 +384,14 @@ async function tickDexBoard(tbody: HTMLElement): Promise<boolean> {
   }
 }
 
-function scheduleTrendingPoll(tbody: HTMLElement, sync: HTMLElement | null, pumpMode: boolean) {
+function startTrendingData(
+  tbody: HTMLElement,
+  sub: HTMLElement | null,
+  sync: HTMLElement | null,
+) {
   let busy = false;
-  const tick = pumpMode
-    ? () => tickPumpBoard(tbody)
-    : () => tickDexBoard(tbody);
+  let announced = false;
+  let failStreak = 0;
 
   const stamp = () => {
     const t = new Date().toLocaleTimeString([], {
@@ -399,19 +402,49 @@ function scheduleTrendingPoll(tbody: HTMLElement, sync: HTMLElement | null, pump
     setSyncLabel(sync, `· Auto-refresh (${TRENDING_POLL_MS / 1000}s) · ${t}`);
   };
 
-  window.setInterval(async () => {
+  const run = async () => {
     if (busy) return;
     busy = true;
     try {
-      const ok = await tick();
-      if (ok) stamp();
+      if (await tickPumpBoard(tbody)) {
+        if (!announced) {
+          announced = true;
+          setBoardSubtitle(
+            sub,
+            "Pump.fun trending (sort=trending). Updates about every second. On your own domain: run npm run build then npm start (serves dist/ and proxies /pump-api), or configure nginx to forward /pump-api to frontend-api-v3.pump.fun with Origin https://pump.fun.",
+          );
+        }
+        stamp();
+        failStreak = 0;
+        return;
+      }
+      if (await tickDexBoard(tbody)) {
+        if (!announced) {
+          announced = true;
+          setBoardSubtitle(
+            sub,
+            "Pump.fun was not reachable from the browser (CORS or missing /pump-api). Showing DexScreener boosts instead. For Pump data on your domain use npm start after build, or add a reverse proxy for /pump-api.",
+          );
+        }
+        stamp();
+        failStreak = 0;
+        return;
+      }
+      failStreak += 1;
+      if (!announced && failStreak >= 4) {
+        tbody.innerHTML = `<tr><td colspan="10" class="error">Could not load Pump.fun or DexScreener after several tries. On your domain run <strong>npm run build</strong> then <strong>npm start</strong> so <code>/pump-api</code> is proxied to Pump.fun.</td></tr>`;
+        setSyncLabel(sync, "");
+      }
     } finally {
       busy = false;
     }
-  }, TRENDING_POLL_MS);
+  };
+
+  void run();
+  window.setInterval(run, TRENDING_POLL_MS);
 }
 
-async function boot() {
+function boot() {
   const tbody = document.querySelector<HTMLTableSectionElement>("#coin-rows");
   const feed = document.querySelector<HTMLUListElement>("#feed-lines");
   const sub = document.querySelector<HTMLElement>("#board-sub");
@@ -419,50 +452,7 @@ async function boot() {
   if (!tbody || !feed) return;
 
   startGlobalSerpentFeed(feed, () => feedCoinsRef.coins);
-
-  const pumpOk = await tickPumpBoard(tbody);
-  if (pumpOk) {
-    setBoardSubtitle(
-      sub,
-      "Same ordering as pump.fun (sort=trending). The table refetches about every second—no manual refresh. Uses the dev-server proxy with pump.fun Origin headers.",
-    );
-    setSyncLabel(
-      sync,
-      `· Auto-refresh (${TRENDING_POLL_MS / 1000}s) · ${new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      })}`,
-    );
-    scheduleTrendingPoll(tbody, sync, true);
-    return;
-  }
-
-  try {
-    const dexOk = await tickDexBoard(tbody);
-    if (!dexOk) {
-      throw new Error("Empty fallback list");
-    }
-    setBoardSubtitle(
-      sub,
-      "Pump.fun API unreachable from this host (use npm run dev / npm run preview for the proxy). Showing DexScreener boosts instead; they also auto-refresh about every second.",
-    );
-    setSyncLabel(
-      sync,
-      `· Auto-refresh (${TRENDING_POLL_MS / 1000}s) · ${new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      })}`,
-    );
-    scheduleTrendingPoll(tbody, sync, false);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    tbody.innerHTML = `<tr><td colspan="10" class="error">Could not load data (${escapeHtml(
-      message,
-    )}). Check your connection and try again.</td></tr>`;
-    setSyncLabel(sync, "");
-  }
+  startTrendingData(tbody, sub, sync);
 }
 
 void boot();
